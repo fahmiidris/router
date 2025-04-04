@@ -116,3 +116,32 @@ func TestRouteGroupAPI(t *testing.T) {
 		t.Error("routing HandlerFunc failed")
 	}
 }
+
+func TestMiddlewareGroup(t *testing.T) {
+	var get, middleware bool
+
+	router := New()
+	group := router.Group("/foo")
+
+	group.Use(func(next Handle) Handle {
+		return func(w http.ResponseWriter, r *http.Request, ps Params) {
+			middleware = true
+			next(w, r, ps)
+		}
+	})
+
+	group.GET("/GET", func(w http.ResponseWriter, r *http.Request, _ Params) {
+		get = true
+	})
+
+	w := new(mockResponseWriter)
+
+	r, _ := http.NewRequest("GET", "/foo/GET", nil)
+	router.ServeHTTP(w, r)
+	if !get {
+		t.Error("routing /foo/GET failed")
+	}
+	if !middleware {
+		t.Error("middleware not called")
+	}
+}
