@@ -92,6 +92,13 @@ import (
 // wildcards (path variables).
 type Handle func(http.ResponseWriter, *http.Request, Params)
 
+// Middleware is a function that wraps a Handle and returns a new Handle.
+// It can be used to add functionality to the request handling process,
+// such as logging, authentication, or error handling.
+// Middleware functions can be chained together to create a pipeline of
+// processing steps for incoming requests.
+type Middleware func(Handle) Handle
+
 // Param is a single URL parameter, consisting of a key and a value.
 type Param struct {
 	Key   string
@@ -144,6 +151,8 @@ type Router struct {
 
 	paramsPool sync.Pool
 	maxParams  uint16
+
+	middlewares []Middleware
 
 	// If enabled, adds the matched route path onto the http.Request context
 	// before invoking the handler.
@@ -250,6 +259,23 @@ func (r *Router) saveMatchedRoutePath(path string, handle Handle) Handle {
 	}
 }
 
+func (r *Router) wrapToMiddleware(h Handle) Handle {
+	for i := len(r.middlewares) - 1; i >= 0; i-- {
+		h = r.middlewares[i](h)
+	}
+
+	return h
+}
+
+// Use adds a middleware to the router.
+func (r *Router) Use(m Middleware) {
+	if m == nil {
+		r.middlewares = make([]Middleware, 0, 1)
+	}
+
+	r.middlewares = append(r.middlewares, m)
+}
+
 // Group adds a zero overhead group of routes that share a common root path.
 func (r *Router) Group(path string) *Group {
 	return newGroup(r, path)
@@ -304,12 +330,16 @@ func (r *Router) Handle(method, path string, handle Handle) {
 	if method == "" {
 		panic("method must not be empty")
 	}
+
 	if len(path) < 1 || path[0] != '/' {
 		panic("path must begin with '/' in path '" + path + "'")
 	}
+
 	if handle == nil {
 		panic("handle must not be nil")
 	}
+
+	handle = r.wrapToMiddleware(handle)
 
 	if r.SaveMatchedRoutePath {
 		varsCount++
@@ -375,7 +405,8 @@ func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
 // of the Router's NotFound handler.
 // To use the operating system's file system implementation,
 // use http.Dir:
-//     router.ServeFiles("/src/*filepath", http.Dir("/var/www"))
+//
+//	router.ServeFiles("/src/*filepath", http.Dir("/var/www"))
 func (r *Router) ServeFiles(path string, root http.FileSystem) {
 	if len(path) < 10 || path[len(path)-10:] != "/*filepath" {
 		panic("path must end with /*filepath in path '" + path + "'")
