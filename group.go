@@ -40,6 +40,10 @@ func (group *Group) HandlerFunc(method, path string, handler http.HandlerFunc) {
 	group.r.HandlerFunc(method, group.subPath(path), handler)
 }
 
+func (group *Group) Use(middleware Middleware) {
+	group.r.Use(middleware)
+}
+
 func (group *Group) GET(path string, handle Handle) {
 	group.Handle("GET", path, handle)
 }
